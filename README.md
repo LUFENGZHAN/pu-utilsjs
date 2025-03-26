@@ -17,7 +17,7 @@ import utilsjs from 'pu-utilsjs';
 | 函数         | 参数                     | 备注                                                                                                                        |
 | ------------ | ------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | debounce     | debounce(函数,1000)      | 返回防抖函数函数，单位为毫秒                                                                                                |
-| defTime      | defTime(1,false)         | 返回当前月份往前推的时间区间,true 为当前的时间前推，false 是当前月份往前推                                                  |
+| getDateRange | getDateRange(1,false)    | 返回当前月份往前推的时间区间,true 为当前的时间前推，false 是当前月份往前推                                                  |
 | cuFile       | cuFile(文件,5,false)     | 文件分切处理，布尔值用于绝对是否使用 MD5 作为 hash 值                                                                       |
 | encrypt      | encrypt(内容,key,true)   | 加密默认采用 MD5 作为 key，第三个参入为真的话是把您传入的 key 转为 MD5，函数返回对象                                        |
 | decrypt      | decrypt(密文,key)        | 返回解密结果，key 必须与加密时的 key 一样                                                                                   |
@@ -36,10 +36,10 @@ MaxNum('12345678987654321', '12345678987654321'); //24691357975308642
 #### 获取时间区间
 
 ```js
-import { defTime } from 'pu-utilsjs';
+import { getDateRange } from 'pu-utilsjs';
 
-defTime(1); //['2024-03-01', '2024-03-31']
-defTime(1, true); //['2024-02-18', '2024-03-18']
+getDateRange(1); //['2024-03-01', '2024-03-31']
+getDateRange(1, true); //['2024-02-18', '2024-03-18']
 ```
 
 #### 文件切片

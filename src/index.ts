@@ -36,29 +36,56 @@ export const MaxNum = (start: string, end: string): String => {
 };
 
 /**
- *
- *  defTime 时间区间
- * @param {number} interval 间隔月数或当前月份
- * @param {boolean} _bool 是否从当天启始
- * @returns {Array<string>} - 包含起始日期和结束日期的数组
+ * 获取日期范围，可以获取最近N个月的起止日期
+ * @param {number} interval 间隔月数，必须大于0
+ * @param {boolean} fromToday 是否从当天开始计算（否则从月初/月末计算）
+ * @returns {Array<string>} - 包含起始日期和结束日期的数组，格式：YYYY-MM-DD
+ * @throws {Error} 当 interval 小于或等于0时抛出错误
  */
-export const defTime = (interval: number = 1, _bool: boolean = false): Array<string> => {
-	const date = new Date();
-	const months = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-	let year = date.getFullYear();
-	let month = date.getMonth() + 1;
-	interval = Number(interval) || 1;
-	_bool ? interval : interval--;
-	let index = Number(interval) === 0 ? month : month - Number(interval);
-	if (index < 1) {
-		index = months[Math.abs(index) % 12];
-		year = year - Math.ceil(Number(interval) / 12);
-	}
-	const daysInMonth = new Date(year, date.getMonth() + 1, 0).getDate();
-	let start = `${year}-${formatNumber(index)}-${formatNumber(_bool ? date.getDate() : 1)}`;
-	let end = `${date.getFullYear()}-${formatNumber(date.getMonth() + 1)}-${_bool ? date.getDate() : formatNumber(daysInMonth)}`;
-	return [start, end];
+export const getDateRange = (interval: number = 1, fromToday: boolean = false): Array<string> => {
+    // 验证 interval 参数
+    const validInterval = Number(interval);
+    if (isNaN(validInterval) || validInterval <= 0) {
+        throw new Error('interval must be a positive number');
+    }
+
+    const date = new Date();
+    const currentYear = date.getFullYear();
+    const currentMonth = date.getMonth(); // 0-11
+    const currentDay = date.getDate();
+
+    // 计算起始日期的年月
+    let startMonth = currentMonth - (validInterval - (fromToday ? 0 : 1));
+    let startYear = currentYear;
+    
+    // 处理月份小于0的情况
+    if (startMonth < 0) {
+        const yearDiff = Math.floor(Math.abs(startMonth) / 12) + 1;
+        startYear -= yearDiff;
+        startMonth = 12 + (startMonth % 12);
+        if (startMonth === 12) {
+            startMonth = 0;
+            startYear += 1;
+        }
+    }
+
+    // 计算每个月的天数
+    const startMonthDays = new Date(startYear, startMonth + 1, 0).getDate();
+    const endMonthDays = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+    // 确定日期
+    const startDay = fromToday ? Math.min(currentDay, startMonthDays) : 1;
+    const endDay = fromToday ? currentDay : endMonthDays;
+
+    // 格式化日期字符串
+    const start = `${startYear}-${formatNumber(startMonth + 1)}-${formatNumber(startDay)}`;
+    const end = `${currentYear}-${formatNumber(currentMonth + 1)}-${formatNumber(endDay)}`;
+
+    return [start, end];
 };
+
+// 为了保持向后兼容，保留旧的函数名作为别名
+export const defTime = getDateRange;
 
 // 添加 worker blob URL 创建函数
 function createWorkerBlobURL() {
@@ -126,7 +153,7 @@ function createWorkerBlobURL() {
                     }
                 } else {
                     const simpleHashStr = simpleHash(\`\${file.name}-\${index}-\${start}\`);
-				
+                
                     resolve({
                         file: chunk,
                         start: start,
@@ -164,67 +191,83 @@ function createWorkerBlobURL() {
  * @param {Boolean} isMd5 是否使用md5作为hash
  */
 export const cuFile = (file: File, size: number = 5, isMd5: Boolean = false) => {
-	return new Promise((resolve, reject) => {
-		try {
-			if (!file) return [];
-			const CHUNK_SIZE = Math.round(size) * 1024 * 1024;
-			const chunkCount = Math.ceil(file.size / CHUNK_SIZE);
-			const THREAD_COUNT = navigator.hardwareConcurrency || 4;
-			const threadChunkCount = Math.ceil(chunkCount / THREAD_COUNT);
-			let finishCount = 0;
-			const result: ChunkBlobType[] = [];
-			if (!isMd5) {
-				return resolve(createChunkBlob(file, CHUNK_SIZE));
-			}
+    return new Promise((resolve, reject) => {
+        const workers: Worker[] = [];
+        let workerURL: string | null = null;
 
-			// 创建 worker blob URL
-			const workerURL = createWorkerBlobURL();
+        // 清理函数
+        const cleanup = () => {
+            // 终止所有 worker
+            workers.forEach(worker => worker.terminate());
+            workers.length = 0;
+            // 清理 blob URL
+            if (workerURL) {
+                URL.revokeObjectURL(workerURL);
+                workerURL = null;
+            }
+        };
+
+        try {
+            if (!file) return [];
+            const CHUNK_SIZE = Math.round(size) * 1024 * 1024;
+            const chunkCount = Math.ceil(file.size / CHUNK_SIZE);
+            const THREAD_COUNT = navigator.hardwareConcurrency || 4;
+            const threadChunkCount = Math.ceil(chunkCount / THREAD_COUNT);
+            let finishCount = 0;
+            const result: ChunkBlobType[] = [];
+            if (!isMd5) {
+                return resolve(createChunkBlob(file, CHUNK_SIZE));
+            }
+
+            workerURL = createWorkerBlobURL();
             
-			for (let i = 0; i < THREAD_COUNT; i++) {
-				const worker = new Worker(workerURL, { type: 'module' });
-				let end = (i + 1) * threadChunkCount;
-				let start = i * threadChunkCount;
-				if (end > chunkCount) {
-					end = chunkCount;
-				}
+            for (let i = 0; i < THREAD_COUNT; i++) {
+                const worker = new Worker(workerURL, { type: 'module' });
+                workers.push(worker); // 将 worker 添加到数组中
+
+                let end = (i + 1) * threadChunkCount;
+                let start = i * threadChunkCount;
+                if (end > chunkCount) {
+                    end = chunkCount;
+                }
                 
-				worker.onerror = (error) => {
-					console.error('Worker error:', error);
-					worker.terminate();
-					reject(error);
-				};
+                worker.onerror = (error) => {
+                    console.error('Worker error:', error);
+                    cleanup();
+                    reject(error);
+                };
                 
-				worker.onmessage = e => {
-					if (e.data.error) {
-						console.error('Worker reported error:', e.data.error);
-						worker.terminate();
-						reject(new Error(e.data.error));
-						return;
-					}
+                worker.onmessage = e => {
+                    if (e.data.error) {
+                        console.error('Worker reported error:', e.data.error);
+                        cleanup();
+                        reject(new Error(e.data.error));
+                        return;
+                    }
                     
-					for (let i = start; i < end; i++) {
-						result[i] = e.data[i - start];
-					}
-					worker.terminate();
-					finishCount++;
-					if (finishCount === THREAD_COUNT) {
-						// 清理 worker blob URL
-						URL.revokeObjectURL(workerURL);
-						resolve(result);
-					}
-				};
+                    for (let i = start; i < end; i++) {
+                        result[i] = e.data[i - start];
+                    }
+                    worker.terminate();
+                    finishCount++;
+                    if (finishCount === THREAD_COUNT) {
+                        cleanup();
+                        resolve(result);
+                    }
+                };
                 
-				worker.postMessage({
-					file,
-					CHUNK_SIZE,
-					start: start,
-					end: end,
-				});
-			}
-		} catch (error) {
-			reject(error);
-		}
-	});
+                worker.postMessage({
+                    file,
+                    CHUNK_SIZE,
+                    start: start,
+                    end: end,
+                });
+            }
+        } catch (error) {
+            cleanup();
+            reject(error);
+        }
+    });
 };
 
 /**
@@ -309,7 +352,7 @@ export const debounce = (func: Function, wait: number): ((...args: any[]) => voi
 
 export default {
 	MaxNum,
-	defTime,
+	getDateRange,
 	cuFile,
 	encrypt,
 	decrypt,

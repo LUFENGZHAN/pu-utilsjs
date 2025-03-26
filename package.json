@@ -1,6 +1,6 @@
 {
   "name": "pu-utilsjs",
-  "version": "0.0.35",
+  "version": "0.1.0",
   "main": "dist/index.js",
   "types": "types/index.d.ts",
   "files": [
