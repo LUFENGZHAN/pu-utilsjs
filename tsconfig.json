@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "baseUrl": "./",
+        "module": "ESNext",
+        "target": "ES2015",
+        "moduleResolution": "node",
+        "allowJs": false,
+        "allowSyntheticDefaultImports": true,
+        "declaration": true,
+        "declarationDir": "./types",
+        "outDir": "./dist",
+        "lib": ["es2017", "dom"],
+        "strict": true
+    }
+}
