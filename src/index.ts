@@ -1,6 +1,6 @@
 import { formatNumber, isNumericString } from './tool';
 import CryptoJs from 'crypto-js';
-import { createChunkType as ChunkType, createChunkBlob, createChunkBlobType as ChunkBlobType } from './createChunk';
+import { createChunkType as ChunkType, createChunkBlob,createWorkerBlobURL, createChunkBlobType as ChunkBlobType } from './createChunk';
 export type createChunkType = ChunkType;
 export type createChunkBlobType = ChunkBlobType;
 
@@ -87,110 +87,13 @@ export const getDateRange = (interval: number = 1, fromToday: boolean = false): 
 // 为了保持向后兼容，保留旧的函数名作为别名
 export const defTime = getDateRange;
 
-// 添加 worker blob URL 创建函数
-function createWorkerBlobURL() {
-    const workerCode = `
-        // 内联 createChunk 的实现
-        function simpleHash(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                const char = str.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash;
-            }
-            return Math.abs(hash).toString(16);
-        }
-
-        async function createChunk(file, index, size) {
-            return new Promise(async (resolve, reject) => {
-                const start = index * size;
-                const end = start + size;
-                const chunk = file.slice(start, end);
-                
-                if (index === 0) {
-                    try {
-                        // 动态导入 SparkMD5
-                        const reader = new FileReader();
-                        reader.onload = async function(e) {
-                            try {
-                                // 注意：这里我们直接使用 importScripts 加载 SparkMD5
-                                importScripts('https://cdn.jsdelivr.net/npm/spark-md5@3.0.2/spark-md5.min.js');
-                                const spark = new SparkMD5.ArrayBuffer();
-                                spark.append(e.target.result);
-                                const md5 = spark.end();
-                                resolve({
-                                    file: chunk,
-                                    start: start,
-                                    end: end,
-                                    hash: md5,
-                                    type: file.type,
-                                    name: file.name
-                                });
-                            } catch (err) {
-                                console.warn('Failed to load SparkMD5, falling back to simple hash:', err);
-                                const simpleHashStr = simpleHash(\`\${file.name}-\${index}-\${start}\`);
-                                resolve({
-                                    file: chunk,
-                                    start: start,
-                                    end: end,
-                                    hash: simpleHashStr,
-                                    type: file.type,
-                                    name: file.name
-                                });
-                            }
-                        };
-                        reader.readAsArrayBuffer(chunk);
-                    } catch (error) {
-                        const simpleHashStr = simpleHash(\`\${file.name}-\${index}-\${start}\`);
-                        resolve({
-                            file: chunk,
-                            start: start,
-                            end: end,
-                            hash: simpleHashStr,
-                            type: file.type,
-                            name: file.name
-                        });
-                    }
-                } else {
-                    const simpleHashStr = simpleHash(\`\${file.name}-\${index}-\${start}\`);
-                
-                    resolve({
-                        file: chunk,
-                        start: start,
-                        end: end,
-                        hash: simpleHashStr,
-                        type: file.type,
-                        name: file.name
-                    });
-                }
-            });
-        }
-
-        self.onmessage = async function (e) {
-            try {
-                const { file, CHUNK_SIZE, start, end } = e.data;
-                const proms = [];
-                for (let i = start; i < end; i++) {
-                    proms.push(createChunk(file, i, CHUNK_SIZE));
-                }
-                const chunks = await Promise.all(proms);
-                self.postMessage(chunks);
-            } catch (error) {
-                self.postMessage({ error: error.message });
-            }
-        }
-    `;
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    return URL.createObjectURL(blob);
-}
-
 /**
  * 文件分片
  * @param {File} file 文件
  * @param {number} size 切片大小
- * @param {Boolean} isMd5 是否使用md5作为hash
+ * @param {Boolean} hash 是否使用hash
  */
-export const cuFile = (file: File, size: number = 5, isMd5: Boolean = false) => {
+export const cuFile = (file: File, size: number = 5, hash: Boolean = false) => {
     return new Promise((resolve, reject) => {
         const workers: Worker[] = [];
         let workerURL: string | null = null;
@@ -215,7 +118,7 @@ export const cuFile = (file: File, size: number = 5, isMd5: Boolean = false) => 
             const threadChunkCount = Math.ceil(chunkCount / THREAD_COUNT);
             let finishCount = 0;
             const result: ChunkBlobType[] = [];
-            if (!isMd5) {
+            if (!hash) {
                 return resolve(createChunkBlob(file, CHUNK_SIZE));
             }
 
