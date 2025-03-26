@@ -93,7 +93,7 @@ export const defTime = getDateRange;
  * @param {number} size 切片大小
  * @param {Boolean} hash 是否使用hash
  */
-export const cuFile = (file: File, size: number = 5, hash: Boolean = false) => {
+export const sliceFile = (file: File, size: number = 5, hash: Boolean = false) => {
     return new Promise((resolve, reject) => {
         const workers: Worker[] = [];
         let workerURL: string | null = null;
@@ -256,7 +256,7 @@ export const debounce = (func: Function, wait: number): ((...args: any[]) => voi
 export default {
 	MaxNum,
 	getDateRange,
-	cuFile,
+	sliceFile,
 	encrypt,
 	decrypt,
 	downloadFile,
